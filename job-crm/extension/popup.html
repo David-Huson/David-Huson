@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <b>Job CRM</b>
+    <span id="score" class="score" hidden></span>
+  </header>
+  <p id="status" class="muted">Reading page…</p>
+  <form id="form" hidden>
+    <label>Title <input name="title" required></label>
+    <label>Company <input name="company"></label>
+    <div class="two">
+      <label>Location <input name="location"></label>
+      <label>Stage
+        <select name="stage">
+          <option value="saved">Saved</option>
+          <option value="applied">Applied</option>
+        </select>
+      </label>
+    </div>
+    <label>Description <textarea name="description" rows="4"></textarea></label>
+    <div id="fit" class="small"></div>
+    <div class="row">
+      <button id="save" class="primary">Save to CRM</button>
+      <a id="open" href="#" class="small">Open CRM</a>
+    </div>
+  </form>
+  <details>
+    <summary class="small muted">Settings</summary>
+    <label>CRM address <input id="server" placeholder="http://localhost:4319"></label>
+  </details>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

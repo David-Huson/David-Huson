@@ -56,6 +56,14 @@ The job view shows the baseline, the learned adjustment and the reasons; **Insig
 The score ranks postings relative to each other. Once there are 8+ outcomes of both kinds, the job view also
 shows an estimated chance of getting a response.
 
+## Tailored resumes
+
+Paste your resume into **Profile** once. On any job, **Tailor resume** builds a prompt containing your resume,
+the posting, the skills you match and miss, and what your past outcomes say about similar postings. Copy it
+into Claude, then paste the result back to keep the exact version you sent with that application.
+
+The prompt tells Claude to use only facts from your resume and to list gaps rather than paper over them.
+
 ## Layout
 
 ```

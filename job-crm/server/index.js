@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, extname } from 'node:path';
 import { openDb, STAGES, PIPELINE, rank } from './db.js';
+import { resumePrompt } from './resume.js';
 import { buildModel, fit, modelSignals, outcomeLabel, findSkills, parseSalary, workMode } from './fit.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,7 +20,7 @@ export function createApp({ dbPath = join(ROOT, 'data', 'crm.db') } = {}) {
 
   const withFit = (job, profile = db.getProfile()) => ({ ...job, fit: fit(job, profile, getModel()) });
   const summary = (job, profile) => {
-    const { description, ...rest } = withFit(job, profile);
+    const { description, tailored_resume, ...rest } = withFit(job, profile);
     const f = rest.fit;
     return { ...rest, fit: { score: f.score, baseline: f.baseline, learned: f.learned, dealbreakers: f.dealbreakers } };
   };
@@ -91,6 +92,12 @@ export function createApp({ dbPath = join(ROOT, 'data', 'crm.db') } = {}) {
     }],
     ['DELETE', /^\/api\/jobs\/(\d+)$/, ({ id }) => { dirty(); return { deleted: db.deleteJob(id) }; }],
 
+    ['GET', /^\/api\/jobs\/(\d+)\/resume-prompt$/, ({ id }) => {
+      const job = db.getJob(id);
+      if (!job) throw httpError(404, 'job not found');
+      const profile = db.getProfile();
+      return resumePrompt(job, profile, fit(job, profile, getModel()));
+    }],
     ['POST', /^\/api\/jobs\/(\d+)\/events$/, ({ id, body }) => {
       if (!db.getJob(id)) throw httpError(404, 'job not found');
       db.addEvent(id, { kind: 'note', note: body.note ?? '' });

@@ -275,9 +275,40 @@ async function openJob(id) {
         h('div', { class: 'muted' }, [j.company, j.location].filter(Boolean).join(' · '), url ? [' · ', h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Open posting ↗')] : null)),
       h('select', { style: 'width:auto', 'aria-label': 'Stage', onchange: (e) => patch({ stage: e.target.value }) },
         STAGES.map((s) => h('option', { value: s, selected: j.stage === s }, s[0].toUpperCase() + s.slice(1)))),
+      h('button', { class: 'primary', onclick: () => openResume(j) }, j.tailored_resume ? 'Resume ✓' : 'Tailor resume'),
       h('button', { class: 'danger', onclick: async () => { if (confirm('Delete this job and its history?')) { await api('DELETE', `/jobs/${id}`); dlg.close(); await load(); } } }, 'Delete'),
       h('button', { onclick: () => dlg.close() }, 'Close')),
     h('div', { class: 'dbody' }, left, right));
+  if (!dlg.open) dlg.showModal();
+}
+
+async function openResume(j) {
+  const r = await api('GET', `/jobs/${j.id}/resume-prompt`);
+  const copy = async (text, what) => {
+    try { await navigator.clipboard.writeText(text); toast(`${what} copied`); } catch { toast('Copy failed — select the text and copy manually'); }
+  };
+  const promptBox = h('textarea', { readOnly: true, style: 'min-height:300px;font-family:ui-monospace,monospace;font-size:12px', value: r.prompt ?? '' });
+  const saved = h('textarea', { style: 'min-height:300px', placeholder: 'Paste the resume Claude wrote here to keep it with this application.', value: j.tailored_resume ?? '' });
+  dlg.replaceChildren(
+    h('div', { class: 'dhead' },
+      h('div', { class: 'grow' }, h('h2', {}, 'Tailor resume'), h('div', { class: 'muted' }, [j.title, j.company].filter(Boolean).join(' · '))),
+      h('button', { onclick: () => openJob(j.id) }, '← Back')),
+    h('div', { class: 'dbody' },
+      h('section', {}, h('h3', { style: 'margin-top:0' }, '1 · Give this prompt to Claude'),
+        r.ok ? [
+          h('p', { class: 'small muted' }, 'Includes your resume, the posting, the skills you match and miss, and what your past outcomes say about postings like this.'),
+          promptBox,
+          h('div', { class: 'row', style: 'margin-top:8px' },
+            h('button', { class: 'primary', onclick: () => copy(r.prompt, 'Prompt') }, 'Copy prompt'),
+            h('a', { href: 'https://claude.ai/new', target: '_blank', rel: 'noopener' }, 'Open Claude ↗'),
+            h('span', { class: 'small muted' }, `${r.prompt.length.toLocaleString()} characters`))]
+          : h('p', { class: 'warn' }, r.reason)),
+      h('section', {}, h('h3', { style: 'margin-top:0' }, '2 · Save the result'),
+        h('p', { class: 'small muted' }, 'So you know exactly which version you sent.'),
+        saved,
+        h('div', { class: 'row', style: 'margin-top:8px' },
+          h('button', { class: 'primary', onclick: async () => { await api('PATCH', `/jobs/${j.id}`, { tailored_resume: saved.value }); j.tailored_resume = saved.value; toast('Resume saved'); } }, 'Save'),
+          h('button', { onclick: () => copy(saved.value, 'Resume') }, 'Copy')))));
   if (!dlg.open) dlg.showModal();
 }
 

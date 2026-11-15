@@ -63,3 +63,16 @@ test('rejects foreign origins, allows extensions', async () => {
   const res = await fetch(base + '/api/jobs', { method: 'POST', body: '{"title":"x"}', headers: { 'Content-Type': 'text/plain' } });
   assert.equal(res.status, 415);
 });
+
+test('resume prompt', async () => {
+  const { job } = (await call('POST', '/api/jobs', { title: 'Full Stack Engineer', company: 'Initech', description: 'TypeScript, React, Kubernetes. 3+ years of experience.' })).data;
+  await call('PUT', '/api/profile', { skills: 'typescript, react', resume: '' });
+  assert.equal((await call('GET', `/api/jobs/${job.id}/resume-prompt`)).data.ok, false);
+  await call('PUT', '/api/profile', { skills: 'typescript, react', resume: 'David — Full stack engineer. Built apps with TypeScript and React.' });
+  const r = (await call('GET', `/api/jobs/${job.id}/resume-prompt`)).data;
+  assert.equal(r.ok, true);
+  for (const s of ['Initech', 'Built apps with TypeScript', 'NOT on my profile: kubernetes', 'on my profile: typescript, react', 'Never invent']) assert.ok(r.prompt.includes(s), s);
+  await call('PATCH', `/api/jobs/${job.id}`, { tailored_resume: '# David' });
+  assert.equal((await call('GET', `/api/jobs/${job.id}`)).data.tailored_resume, '# David');
+  assert.ok(!('tailored_resume' in (await call('GET', '/api/jobs')).data[0]));
+});

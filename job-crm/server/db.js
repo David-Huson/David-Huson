@@ -20,7 +20,7 @@ export const DEFAULT_PROFILE = {
 
 const JOB_FIELDS = [
   'company', 'title', 'location', 'remote_mode', 'salary_min', 'salary_max',
-  'url', 'source', 'description', 'notes', 'excitement', 'applied_at',
+  'url', 'source', 'description', 'notes', 'excitement', 'applied_at', 'tailored_resume',
 ];
 
 const now = () => new Date().toISOString();
@@ -99,6 +99,10 @@ export function openDb(path) {
     CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `);
 
+  // Migrations for databases created by earlier versions.
+  const jobCols = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  if (!jobCols.includes('tailored_resume')) db.exec("ALTER TABLE jobs ADD COLUMN tailored_resume TEXT NOT NULL DEFAULT ''");
+
   const clean = (input) => {
     const out = {};
     for (const f of JOB_FIELDS) {
@@ -109,7 +113,7 @@ export function openDb(path) {
       } else if (f === 'applied_at') {
         v = v || null;
       } else {
-        v = v == null ? '' : String(v).slice(0, f === 'description' ? 60000 : 5000).trim();
+        v = v == null ? '' : String(v).slice(0, ['description', 'tailored_resume'].includes(f) ? 60000 : 5000).trim();
       }
       out[f] = v;
     }

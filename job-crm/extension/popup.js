@@ -50,7 +50,9 @@ function showTracked(job, isNew) {
 }
 
 async function init() {
-  ({ server = DEFAULT_SERVER } = await chrome.storage.sync.get('server'));
+  let labels;
+  ({ server = DEFAULT_SERVER, labels = 'needs-triage' } = await chrome.storage.sync.get(['server', 'labels']));
+  form.elements.labels.value = labels;
   $('server').value = server;
   $('open').addEventListener('click', (e) => { e.preventDefault(); chrome.tabs.create({ url: server }); });
   $('server').addEventListener('change', async (e) => {
@@ -87,6 +89,7 @@ form.addEventListener('submit', async (e) => {
   $('save').disabled = true;
   try {
     const r = await api('POST', '/jobs', posting());
+    await chrome.storage.sync.set({ labels: form.elements.labels.value }); // remembered as the default for next time
     showTracked(r.job, !r.duplicate);
   } catch (err) {
     $('save').disabled = false;

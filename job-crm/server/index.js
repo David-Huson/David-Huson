@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, extname } from 'node:path';
 import { openDb, STAGES, PIPELINE, rank } from './db.js';
 import { resumePrompt } from './resume.js';
+import { toDocx, toPrintHtml } from './docx.js';
 import { buildModel, fit, modelSignals, outcomeLabel, findSkills, parseSalary, workMode } from './fit.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -98,6 +99,16 @@ export function createApp({ dbPath = join(ROOT, 'data', 'crm.db') } = {}) {
       const profile = db.getProfile();
       return resumePrompt(job, profile, fit(job, profile, getModel()));
     }],
+    ['GET', /^\/api\/jobs\/(\d+)\/resume\.(docx|html)$/, ({ id, match }) => {
+      const job = db.getJob(id);
+      if (!job) throw httpError(404, 'job not found');
+      if (!job.tailored_resume.trim()) throw httpError(404, 'no resume saved for this job yet');
+      const name = ['Resume', job.company, job.title].filter(Boolean).join(' - ').replace(/[^\w .,&()+-]/g, '').slice(0, 120);
+      return match[2] === 'docx'
+        ? { raw: toDocx(job.tailored_resume), type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', filename: `${name}.docx` }
+        : { raw: toPrintHtml(job.tailored_resume, name), type: 'text/html; charset=utf-8' };
+    }],
+    ['GET', /^\/api\/labels$/, () => db.labelCounts()],
     ['POST', /^\/api\/jobs\/(\d+)\/events$/, ({ id, body }) => {
       if (!db.getJob(id)) throw httpError(404, 'job not found');
       db.addEvent(id, { kind: 'note', note: body.note ?? '' });
@@ -154,7 +165,13 @@ export function createApp({ dbPath = join(ROOT, 'data', 'crm.db') } = {}) {
             if (!/^application\/json/.test(req.headers['content-type'] ?? '')) throw httpError(415, 'JSON body required');
             body = await readJson(req);
           }
-          return send(200, fn({ id: m[1] ? Number(m[1]) : undefined, body, query: url.searchParams }));
+          const out = fn({ id: m[1] ? Number(m[1]) : undefined, body, query: url.searchParams, match: m });
+          if (out?.raw) {
+            res.writeHead(200, { 'Content-Type': out.type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+              ...(out.filename ? { 'Content-Disposition': `attachment; filename="${out.filename}"` } : {}), ...cors });
+            return res.end(out.raw);
+          }
+          return send(200, out);
         }
         return send(404, { error: 'not found' });
       } catch (err) {

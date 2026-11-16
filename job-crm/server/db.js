@@ -43,6 +43,14 @@ export function urlKey(url) {
   }
 }
 
+/** Labels are free-form tags, stored lowercase-kebab so "Needs Triage" and "needs-triage" are the same label. */
+export function normalizeLabels(v) {
+  const items = Array.isArray(v) ? v : String(v ?? '').split(',');
+  const out = items.map((s) => String(s).trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-_.\/+#]/g, '').slice(0, 40)).filter(Boolean);
+  return [...new Set(out)].slice(0, 20);
+}
+const row = (j) => (j ? { ...j, labels: JSON.parse(j.labels || '[]') } : j);
+
 export function openDb(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
@@ -101,6 +109,7 @@ export function openDb(path) {
 
   // Migrations for databases created by earlier versions.
   const jobCols = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  if (!jobCols.includes('labels')) db.exec("ALTER TABLE jobs ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'");
   if (!jobCols.includes('tailored_resume')) db.exec("ALTER TABLE jobs ADD COLUMN tailored_resume TEXT NOT NULL DEFAULT ''");
 
   const clean = (input) => {
@@ -117,17 +126,18 @@ export function openDb(path) {
       }
       out[f] = v;
     }
+    if ('labels' in input) out.labels = JSON.stringify(normalizeLabels(input.labels));
     return out;
   };
 
   const api = {
     raw: db,
 
-    listJobs: () => db.prepare('SELECT * FROM jobs ORDER BY updated_at DESC').all(),
-    getJob: (id) => db.prepare('SELECT * FROM jobs WHERE id = ?').get(id),
+    listJobs: () => db.prepare('SELECT * FROM jobs ORDER BY updated_at DESC').all().map(row),
+    getJob: (id) => row(db.prepare('SELECT * FROM jobs WHERE id = ?').get(id)),
     findByUrl: (url) => {
       const key = urlKey(url);
-      return key ? db.prepare('SELECT * FROM jobs WHERE url_key = ?').get(key) : undefined;
+      return key ? row(db.prepare('SELECT * FROM jobs WHERE url_key = ?').get(key)) : undefined;
     },
 
     createJob(input) {
@@ -162,6 +172,12 @@ export function openDb(path) {
       const keys = Object.keys(cols);
       db.prepare(`UPDATE jobs SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => cols[k]), id);
       return api.getJob(id);
+    },
+
+    labelCounts() {
+      const counts = {};
+      for (const j of api.listJobs()) for (const l of j.labels) counts[l] = (counts[l] ?? 0) + 1;
+      return Object.entries(counts).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     },
 
     deleteJob: (id) => db.prepare('DELETE FROM jobs WHERE id = ?').run(id).changes > 0,

@@ -3,7 +3,7 @@ const TERMINAL = ['rejected', 'ghosted', 'withdrawn'];
 const STAGES = [...PIPELINE, ...TERMINAL];
 const VIEWS = { board: 'Board', list: 'List', insights: 'Insights', profile: 'Profile' };
 
-const state = { view: location.hash.slice(1) in VIEWS ? location.hash.slice(1) : 'board', jobs: [], q: '', sort: { key: 'fit', dir: -1 } };
+const state = { view: location.hash.slice(1) in VIEWS ? location.hash.slice(1) : 'board', jobs: [], q: '', label: null, sort: { key: 'fit', dir: -1 } };
 const $ = (id) => document.getElementById(id);
 
 async function api(method, path, body) {
@@ -48,7 +48,30 @@ async function load() {
 
 function visibleJobs() {
   const q = state.q.trim().toLowerCase();
-  return q ? state.jobs.filter((j) => `${j.company} ${j.title} ${j.location} ${j.source}`.toLowerCase().includes(q)) : state.jobs;
+  const jobs = state.label ? state.jobs.filter((j) => j.labels.includes(state.label)) : state.jobs;
+  return q ? jobs.filter((j) => `${j.company} ${j.title} ${j.location} ${j.source} ${j.labels.join(' ')}`.toLowerCase().includes(q)) : jobs;
+}
+
+// ---------- labels ----------
+function labelChip(label, { onclick, onremove, count, on } = {}) {
+  let hue = 0;
+  for (const c of label) hue = (hue * 31 + c.charCodeAt(0)) % 360;
+  return h(onclick ? 'button' : 'span', { class: `label${on ? ' on' : ''}`, style: `--h:${hue}`, type: onclick ? 'button' : null, onclick },
+    label, count != null ? h('span', { class: 'n' }, count) : null,
+    onremove ? h('button', { class: 'x', type: 'button', title: `Remove ${label}`, 'aria-label': `Remove ${label}`, onclick: onremove }, '✕') : null);
+}
+const allLabels = () => {
+  const counts = {};
+  for (const j of state.jobs) for (const l of j.labels) counts[l] = (counts[l] ?? 0) + 1;
+  return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+};
+function labelBar() {
+  const labels = allLabels();
+  if (state.label && !labels.some(([l]) => l === state.label)) state.label = null;
+  if (!labels.length) return null;
+  return h('div', { class: 'labelbar' }, h('span', { class: 'small muted' }, 'Labels'),
+    labels.map(([l, n]) => labelChip(l, { count: n, on: state.label === l, onclick: () => { state.label = state.label === l ? null : l; render(); } })),
+    state.label ? h('button', { class: 'link small', onclick: () => { state.label = null; render(); } }, 'Clear') : null);
 }
 
 function render() {
@@ -60,8 +83,9 @@ function render() {
 
 // ---------- board ----------
 function renderBoard() {
-  const jobs = visibleJobs();
   if (!state.jobs.length) return $('view').replaceChildren(emptyState());
+  const bar = labelBar();
+  const jobs = visibleJobs();
   const column = (stage) => {
     const items = jobs.filter((j) => j.stage === stage).sort((a, b) => b.fit.score - a.fit.score);
     return h('section', {
@@ -72,6 +96,7 @@ function renderBoard() {
     }, h('header', {}, h('span', {}, stage), h('span', {}, items.length)), items.map(card));
   };
   $('view').replaceChildren(
+    bar,
     h('div', { class: 'board' }, PIPELINE.map(column)),
     h('h3', { class: 'closed' }, 'Closed'),
     h('div', { class: 'board' }, TERMINAL.map(column)),
@@ -86,7 +111,8 @@ function card(j) {
     onkeydown: (e) => e.key === 'Enter' && openJob(j.id),
   },
   h('div', { class: 't' }, j.title || '(untitled)'), scoreBadge(j.fit),
-  h('div', { class: 'c' }, [j.company, j.remote_mode || j.location, money(j)].filter(Boolean).join(' · ')));
+  h('div', { class: 'c' }, [j.company, j.remote_mode || j.location, money(j)].filter(Boolean).join(' · ')),
+  j.labels.length ? h('div', { class: 'labels' }, j.labels.map((l) => labelChip(l))) : null);
 }
 
 async function moveJob(id, stage) {
@@ -106,19 +132,20 @@ function renderList() {
   if (!state.jobs.length) return $('view').replaceChildren(emptyState());
   const cols = [
     ['fit', 'Fit', (j) => j.fit.score], ['company', 'Company', (j) => j.company.toLowerCase()], ['title', 'Title', (j) => j.title.toLowerCase()],
-    ['stage', 'Stage', (j) => STAGES.indexOf(j.stage)], ['mode', 'Mode', (j) => j.remote_mode], ['salary', 'Salary', (j) => j.salary_max ?? j.salary_min ?? 0],
+    ['stage', 'Stage', (j) => STAGES.indexOf(j.stage)], ['labels', 'Labels', (j) => j.labels.join(',')], ['mode', 'Mode', (j) => j.remote_mode], ['salary', 'Salary', (j) => j.salary_max ?? j.salary_min ?? 0],
     ['source', 'Source', (j) => j.source], ['applied', 'Applied', (j) => j.applied_at ?? ''], ['updated', 'Updated', (j) => j.updated_at],
   ];
+  const bar = labelBar();
   const { key, dir } = state.sort;
   const get = cols.find((c) => c[0] === key)[2];
   const rows = [...visibleJobs()].sort((a, b) => (get(a) > get(b) ? 1 : get(a) < get(b) ? -1 : 0) * dir);
-  $('view').replaceChildren(h('div', { class: 'tablewrap' }, h('table', {},
+  $('view').replaceChildren(bar, h('div', { class: 'tablewrap' }, h('table', {},
     h('thead', {}, h('tr', {}, cols.map(([k, label]) => h('th', {
       onclick: () => { state.sort = { key: k, dir: key === k ? -dir : k === 'fit' ? -1 : 1 }; render(); },
     }, label, key === k ? (dir > 0 ? ' ▲' : ' ▼') : '')))),
     h('tbody', {}, rows.map((j) => h('tr', { onclick: () => openJob(j.id) },
       h('td', {}, scoreBadge(j.fit), j.fit.learned ? h('span', { class: `small delta ${j.fit.learned > 0 ? 'up' : 'down'}` }, ` ${signed(j.fit.learned)}`) : null),
-      h('td', {}, j.company), h('td', {}, j.title), h('td', { class: 'stage' }, j.stage), h('td', {}, j.remote_mode),
+      h('td', {}, j.company), h('td', {}, j.title), h('td', { class: 'stage' }, j.stage), h('td', {}, j.labels.map((l) => labelChip(l))), h('td', {}, j.remote_mode),
       h('td', {}, money(j)), h('td', {}, j.source), h('td', {}, day(j.applied_at)), h('td', {}, day(j.updated_at))))))));
 }
 
@@ -231,8 +258,16 @@ async function openJob(id) {
     h(extra.tag ?? 'input', { value: j[name] ?? '', ...extra, tag: undefined, onchange: (e) => patch({ [name]: e.target.value }) }));
   const url = safeUrl(j.url);
 
+  const setLabels = (labels) => patch({ labels });
+  const labelEditor = h('div', { class: 'labeledit' },
+    j.labels.map((l) => labelChip(l, { onremove: () => setLabels(j.labels.filter((x) => x !== l)) })),
+    h('form', { onsubmit: (e) => { e.preventDefault(); const v = e.target.label.value.trim(); if (v) setLabels([...j.labels, ...v.split(',')]); } },
+      h('input', { name: 'label', list: 'label-options', placeholder: j.labels.length ? 'Add label…' : 'Add a label, e.g. needs-triage', 'aria-label': 'Add label', autocomplete: 'off' }),
+      h('datalist', { id: 'label-options' }, allLabels().filter(([l]) => !j.labels.includes(l)).map(([l]) => h('option', { value: l })))));
+
   const left = h('div', {},
     h('section', { class: 'panel' },
+      h('label', { style: 'margin-bottom:4px' }, 'Labels'), labelEditor,
       h('div', { class: 'form2' },
         field('company', 'Company'), field('title', 'Title'), field('location', 'Location'),
         h('label', {}, 'Work mode', h('select', { onchange: (e) => patch({ remote_mode: e.target.value }) },
@@ -288,6 +323,21 @@ async function openResume(j) {
     try { await navigator.clipboard.writeText(text); toast(`${what} copied`); } catch { toast('Copy failed — select the text and copy manually'); }
   };
   const promptBox = h('textarea', { readOnly: true, style: 'min-height:300px;font-family:ui-monospace,monospace;font-size:12px', value: r.prompt ?? '' });
+  // Exports always reflect what is in the box, so save first.
+  const exportResume = async (ext) => {
+    if (!saved.value.trim()) return toast('Paste the resume first');
+    const tab = ext === 'html' ? window.open('', '_blank') : null;
+    await api('PATCH', `/jobs/${j.id}`, { tailored_resume: saved.value });
+    j.tailored_resume = saved.value;
+    const url = `/api/jobs/${j.id}/resume.${ext}`;
+    if (tab) return void (tab.location = url);
+    const res = await fetch(url);
+    if (!res.ok) return toast('Export failed');
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'Resume.docx';
+    const link = h('a', { href: URL.createObjectURL(await res.blob()), download: name });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  };
   const saved = h('textarea', { style: 'min-height:300px', placeholder: 'Paste the resume Claude wrote here to keep it with this application.', value: j.tailored_resume ?? '' });
   dlg.replaceChildren(
     h('div', { class: 'dhead' },
@@ -308,7 +358,9 @@ async function openResume(j) {
         saved,
         h('div', { class: 'row', style: 'margin-top:8px' },
           h('button', { class: 'primary', onclick: async () => { await api('PATCH', `/jobs/${j.id}`, { tailored_resume: saved.value }); j.tailored_resume = saved.value; toast('Resume saved'); } }, 'Save'),
-          h('button', { onclick: () => copy(saved.value, 'Resume') }, 'Copy')))));
+          h('button', { onclick: () => copy(saved.value, 'Resume') }, 'Copy'),
+          h('button', { onclick: () => exportResume('docx') }, 'Download .docx'),
+          h('button', { onclick: () => exportResume('html') }, 'Print / PDF')))));
   if (!dlg.open) dlg.showModal();
 }
 
@@ -325,7 +377,8 @@ function openAdd() {
     h('label', {}, 'Title', h('input', { name: 'title', required: true })), h('label', {}, 'Company', h('input', { name: 'company' })),
     h('label', {}, 'Posting URL', h('input', { name: 'url', type: 'url' })), h('label', {}, 'Location', h('input', { name: 'location' })),
     h('label', {}, 'Stage', h('select', { name: 'stage' }, STAGES.map((s) => h('option', { value: s }, s)))),
-    h('label', {}, 'Source', h('input', { name: 'source', placeholder: 'referral, linkedin…' }))),
+    h('label', {}, 'Source', h('input', { name: 'source', placeholder: 'referral, linkedin…' })),
+    h('label', {}, 'Labels (comma separated)', h('input', { name: 'labels', placeholder: 'needs-triage, dream-job' }))),
   h('label', {}, 'Job description (paste it — this is what gets scored)', h('textarea', { name: 'description', style: 'min-height:180px' })),
   h('div', { class: 'row' }, h('button', { class: 'primary' }, 'Add job'),
     h('button', { type: 'button', onclick: async () => preview.replaceChildren(fitPanel(await api('POST', '/fit/preview', Object.fromEntries(new FormData(form))))) }, 'Preview fit'),

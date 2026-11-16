@@ -64,6 +64,16 @@ into Claude, then paste the result back to keep the exact version you sent with 
 
 The prompt tells Claude to use only facts from your resume and to list gaps rather than paper over them.
 
+Once a resume is saved on a job, **Download .docx** exports it as a Word document and **Print / PDF** opens a
+print-ready page (choose "Save as PDF"). Headings, bullets, bold and italic from Claude's Markdown carry over.
+
+## Labels
+
+Free-form tags that sit alongside the stage, e.g. `needs-triage`, `referral`, `dream-job`. Add or remove them in
+a job's detail view; they show on cards and in the list, and the label bar above the board filters by one.
+Labels are normalised to lowercase-with-dashes. The extension tags clipped postings `needs-triage` by default;
+change the field in the popup and it remembers your choice.
+
 ## Layout
 
 ```

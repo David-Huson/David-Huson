@@ -76,3 +76,27 @@ test('resume prompt', async () => {
   assert.equal((await call('GET', `/api/jobs/${job.id}`)).data.tailored_resume, '# David');
   assert.ok(!('tailored_resume' in (await call('GET', '/api/jobs')).data[0]));
 });
+
+test('labels', async () => {
+  const { job } = (await call('POST', '/api/jobs', { title: 'Eng', company: 'L1', labels: 'Needs Triage, dream-job, needs-triage' })).data;
+  assert.deepEqual(job.labels, ['needs-triage', 'dream-job']);
+  const upd = (await call('PATCH', `/api/jobs/${job.id}`, { labels: ['referral', '<b>x</b>'] })).data;
+  assert.deepEqual(upd.labels, ['referral', 'bx/b']);
+  await call('POST', '/api/jobs', { title: 'Eng', company: 'L2', labels: ['referral'] });
+  const counts = (await call('GET', '/api/labels')).data;
+  assert.deepEqual(counts.find((c) => c.label === 'referral'), { label: 'referral', count: 2 });
+  assert.deepEqual((await call('POST', '/api/jobs', { title: 'Eng', company: 'L3' })).data.job.labels, []);
+});
+
+test('resume export', async () => {
+  const { job } = (await call('POST', '/api/jobs', { title: 'Eng <1>', company: 'Doc/Co' })).data;
+  assert.equal((await fetch(`${base}/api/jobs/${job.id}/resume.docx`)).status, 404);
+  await call('PATCH', `/api/jobs/${job.id}`, { tailored_resume: '# Dana <Dev>\n\n## Experience\n- Built **fast** things & more\n' });
+  const res = await fetch(`${base}/api/jobs/${job.id}/resume.docx`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /attachment; filename="Resume - DocCo - Eng 1\.docx"/);
+  const buf = Buffer.from(await res.arrayBuffer());
+  assert.equal(buf.readUInt32LE(0), 0x04034b50);
+  const html = await (await fetch(`${base}/api/jobs/${job.id}/resume.html`)).text();
+  assert.ok(html.includes('<h1>Dana &lt;Dev&gt;</h1>') && html.includes('<li>Built <strong>fast</strong> things &amp; more</li>'));
+});
